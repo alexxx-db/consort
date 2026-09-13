@@ -501,8 +501,13 @@ const BUILD_LANE: Lane = {
       label: "Driver",
       sub: "minimal honest code (GREEN)",
       match: {
+        // b-green is declared BEFORE b-repair/b-perm and matches any driver event whose buildMode is
+        // not excluded here, so every driver GREEN-outcome variant with its OWN step must be listed
+        // or it gets shadowed onto b-green (first-match). `green-superseded` was missing, so a
+        // permissive-green/supersession turn lit b-green and b-perm never lit; `refactor-superseded`
+        // (b-perm) + `refactor`/`repair`/`refactor-deploy` (their own steps) were already excluded.
         role: "driver",
-        buildModeNot: ["refactor", "repair", "refactor-superseded", "refactor-deploy"],
+        buildModeNot: ["refactor", "repair", "refactor-superseded", "refactor-deploy", "green-superseded"],
       },
     },
     {

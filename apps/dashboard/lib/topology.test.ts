@@ -378,6 +378,20 @@ describe("matchesStep", () => {
     expect(matchesStep(m, ev("phase.start", "spec-author"))).toBe(false);
   });
 
+  // The build-cycle GREEN outcomes must land on their OWN step, not be shadowed by b-green. b-green
+  // matches any driver event whose buildMode is not in its buildModeNot, and it is declared BEFORE
+  // b-repair/b-perm — so a `green-superseded`/`refactor-superseded` driver turn matched b-green first
+  // and its own step (b-perm) never lit. `repair` is excluded from b-green, so it reaches b-repair.
+  it("routes each driver build-outcome phase.start to its own build step (not shadowed by b-green)", () => {
+    const step = (bm: string | undefined) =>
+      laneStepForEvent(ev("phase.start", "driver", { story: "S1", ...(bm ? { phase: bm, buildMode: bm } : { phase: "green" }) }));
+    expect(step(undefined)).toEqual({ lane: "build", step: "b-green" }); // plain GREEN (no buildMode)
+    expect(step("repair")).toEqual({ lane: "build", step: "b-repair" }); // regression repair
+    expect(step("green-superseded")).toEqual({ lane: "build", step: "b-perm" }); // supersession
+    expect(step("refactor-superseded")).toEqual({ lane: "build", step: "b-perm" }); // refactor-time supersession
+    expect(step("refactor")).toEqual({ lane: "build", step: "b-refactor" }); // structure refactor
+  });
+
   it("ignores non-string metadata rather than coercing it", () => {
     expect(matchesStep({ role: "driver", phase: "green" }, ev("x", "driver", { phase: 7 }))).toBe(false);
     // a numeric buildMode is treated as absent, so phaseNot/buildModeNot don't exclude
@@ -775,6 +789,13 @@ const MATCH_DEVIATIONS: { lane: (typeof PORTED_LANE_IDS)[number]; step: string; 
     py: { role: "navigator", buildModeAny: ["assess", "assess-refactor", "assess-deploy"] },
     ts: { role: "navigator", buildModeAny: ["assess", "assess-refactor"] },
     why: "assess-deploy is the DEPLOY lane's assess (dp-assess) — a deploy-verify contamination check, not a build-cycle regression. Claiming it here anchored the deploy self-heal to the wrong lane's Navigator bubble, so b-assess is narrowed to the two build-cycle assesses and dp-assess now owns assess-deploy.",
+  },
+  {
+    lane: "build",
+    step: "b-green",
+    py: { role: "driver", buildModeNot: ["refactor", "repair", "refactor-superseded", "refactor-deploy"] },
+    ts: { role: "driver", buildModeNot: ["refactor", "repair", "refactor-superseded", "refactor-deploy", "green-superseded"] },
+    why: "green-superseded was missing from b-green's exclusions, so a permissive-green (supersession) driver turn matched b-green first (b-green is declared before b-perm) and b-perm never lit. Adding it routes green-superseded to its own b-perm step. (refactor-superseded / refactor / repair / refactor-deploy were already excluded, reaching b-perm / b-refactor / b-repair.)",
   },
 ];
 
