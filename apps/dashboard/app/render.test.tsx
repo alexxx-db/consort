@@ -152,6 +152,27 @@ describe("render — WorkflowGraph shipped terminal", () => {
     expect(g).not.toContain("animation:softpulse"); // at rest — the run is done, no pulse
   });
 
+  it("does NOT relight Shipped once the sprint loop carries the playhead back into a new plan", () => {
+    // The `shipped → plan` loop bug: `passed.has("promote")` is sprint-AGNOSTIC — true for the whole
+    // run the moment sprint 1 promotes. Sprint 2's PLAN is derived whole-run (no feature stamped yet),
+    // so passedNodes still carries sprint 1's promote; an idle moment there would relight Shipped as
+    // "done" while Plan is the active node (both hot). activeNode "plan" (not null) means the playhead
+    // LOOPED back, so Shipped must go dark — only the genuine terminal (activeNode null) lights it.
+    expect(state.topology.passedNodes).toContain("promote"); // fixture guard: the stale relight is reachable here
+    const looped: DashboardState = {
+      ...state,
+      blockers: [],
+      focus: { kind: "idle" },
+      topology: { ...state.topology, activeNode: "plan" },
+    };
+    const markup = renderToStaticMarkup(<WorkflowGraph state={looped} />);
+    const g = shippedGroup(markup);
+    expect(g).not.toContain("Shipped · shipped"); // not steady-lit as done
+    expect(g).not.toContain("Shipped · active now"); // and not active
+    expect(g).not.toContain("animation:softpulse"); // and not pulsing
+    expect(markup).toContain("Plan · active now"); // the loop's destination is what's active now
+  });
+
   it("ship-stage escalation → Shipped turns red and pulses", () => {
     const issue: DashboardState = {
       ...state,

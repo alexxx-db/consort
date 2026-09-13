@@ -104,7 +104,7 @@ fi
 if [ -z "${DATABRICKS_CONFIG_PROFILE:-}" ] && [ -n "${DATABRICKS_HOST:-}" ]; then
   RESOLVE_BIN="$WORK_TREE/node_modules/.bin/lakebase-resolve-profile"
   if [ ! -x "$RESOLVE_BIN" ]; then
-    RESOLVE_ALT="$WORK_TREE/node_modules/@databricks-solutions/consort/dist/scripts/lakebase/resolve-profile.cli.js"
+    RESOLVE_ALT="$WORK_TREE/node_modules/@databricks-solutions/lakebase-scm-utils/dist/scripts/lakebase/resolve-profile.cli.js"
     if [ -f "$RESOLVE_ALT" ]; then RESOLVE_BIN="node $RESOLVE_ALT"; else RESOLVE_BIN=""; fi
   fi
   if [ -n "$RESOLVE_BIN" ]; then
@@ -144,6 +144,15 @@ maybe_npm_install() {
       echo "React client: node_modules missing – running npm install..."
       npm install --prefix "$WORK_TREE/client" --silent
       echo "React client: ready."
+    fi
+  fi
+  # Root deps: a Node backend has a root package.json. Install them too, or the scaffolded
+  # project has no runnable backend until the developer manually npm-installs.
+  if [ -f "$WORK_TREE/package.json" ] && [ ! -d "$WORK_TREE/node_modules" ]; then
+    if command -v npm >/dev/null 2>&1; then
+      echo "Root: node_modules missing – running npm install..."
+      npm install --prefix "$WORK_TREE" --silent
+      echo "Root: ready."
     fi
   fi
 }
@@ -317,7 +326,7 @@ fi
 # sides (git and Lakebase). No per-tier env alias is needed; if the Lakebase
 # branch exists, this is a tier checkout. Tiers are never auto-created by
 # this hook – the architect bootstraps them deliberately (see
-# createLongRunningBranch in consort).
+# createLongRunningBranch in lakebase-scm-utils).
 if [ -n "$TIER_BRANCH_NAMES" ] && echo "$TIER_BRANCH_NAMES" | grep -qxF "$BRANCH" \
    && is_protected_tier_name "$BRANCH"; then
   echo "Lakebase: on $BRANCH, connecting to Lakebase tier '$BRANCH'..."

@@ -19,7 +19,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { storyAcIds, readAcLayer, readAcArchitecturalNotes, storyTestListJson, acsDir, designGuideJson, designAssetsDir, architectureJson, dbDesignJson, featureSpecJson, storiesDir } from "../../consort/config/consort-paths.js";
 import { checkArtifactConformance, canonicalArtifactName, checkDbDesign, checkStoryIndependence } from "../../consort/orchestrator/validators/conformance/artifact-conformance.js";
-import { checkE2eRouteCollision } from "../../consort/architecture/e2e-route-adherence.js";
+import { checkE2eRouteCollision, checkE2eSeedBackendDerivation } from "../../consort/architecture/e2e-route-adherence.js";
 import { readRegistration, checkRegisteredBreakdown, readDerivedBreakdown } from "../../consort/gates/registered-breakdown.js";
 
 export interface FormatViolation {
@@ -438,8 +438,12 @@ function checkUxDesigner(args: FormatArgs, v: FormatViolation[]): void {
  *  GREEN, so the navigator must fix the spec in-turn, not ship it to a stalled verify.
  *  Project-level scan; a backend-only project (no `client/`) is a clean no-op. */
 function checkNavigator(args: FormatArgs, v: FormatViolation[]): void {
-  const r = checkE2eRouteCollision(dirname(args.consortDir));
-  for (const x of r.violations) v.push({ artifact: x.spec, problem: x.remediation });
+  const projectDir = dirname(args.consortDir);
+  for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  // Seeds must reach the RESOLVED backend: an E2E that derives it by string-replacing the client
+  // port hardcodes 8000 and writes to a stale server / different DB when a shared CI runner bumps
+  // the backend off a busy port — GREEN locally, RED in CI (stockflow-3-90).
+  for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
 
 const CHECKERS: Record<string, (a: FormatArgs, v: FormatViolation[]) => void> = {

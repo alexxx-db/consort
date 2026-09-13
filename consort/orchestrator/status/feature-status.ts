@@ -3,7 +3,7 @@ import { dirname, join } from "path";
 import { readDriveContext } from "../../../consort/orchestrator/state/orchestrator-probe.js";
 import { readMasterTestList, type TestListItem } from "../../../consort/test-list/test-list";
 import { readPlan, type ExperimentPlan } from "../../../consort/gates/design-spec-gate";
-import { storiesDir as storiesDirOf } from "../../../consort/config/consort-paths.js";
+import { storiesDir as storiesDirOf, featuresDir } from "../../../consort/config/consort-paths.js";
 import {
   listExperiments,
   listExperimentStories,
@@ -260,6 +260,48 @@ export function deriveFeaturePhase(stories: StoryStatusEntry[]): string | null {
     s.gate_status === "approved";
   if (stories.some(inBuild)) return "build";
   return "design";
+}
+
+/** The feature-request.md H1 (the feature's title in the PO's voice), or the id when
+ *  the request is absent or has no heading. */
+function featureRequestTitle(featureDirPath: string, id: string): string {
+  const p = join(featureDirPath, "feature-request.md");
+  if (!existsSync(p)) return id;
+  try {
+    const h1 = readFileSync(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    return h1 ? h1.replace(/^#\s+/, "").trim() : id;
+  } catch {
+    return id;
+  }
+}
+
+/**
+ * The features prior sprints have ALREADY DELIVERED: those whose every tracked story is
+ * done + accepted (the same `deriveFeaturePhase === "complete"` signal feature-status
+ * derives, so the two can never disagree). Pure pipeline.json reads — no git/SCM — so it
+ * is cheap enough to seed the sprint-planning prompt. Empty when nothing is delivered yet
+ * (a first sprint), which is what keeps the propose prompt byte-identical there. Sorted by
+ * id for a stable directive; title is the feature-request.md H1 when present, else the id.
+ */
+export function deliveredFeatures(consortDir: string): { id: string; title: string }[] {
+  const root = featuresDir(consortDir);
+  if (!existsSync(root)) return [];
+  const out: { id: string; title: string }[] = [];
+  const ids = readdirSync(root)
+    .filter((d) => {
+      try {
+        return statSync(join(root, d)).isDirectory();
+      } catch {
+        return false;
+      }
+    })
+    .sort();
+  for (const id of ids) {
+    const stories = summarizeStories(consortDir, id);
+    if (deriveFeaturePhase(stories) !== "complete") continue; // null (no stories) or not-yet-done → not delivered
+    out.push({ id, title: featureRequestTitle(join(root, id), id) });
+  }
+  return out;
 }
 
 /** Reconcile deploy/promote completion from the drive engine's context (the SAME

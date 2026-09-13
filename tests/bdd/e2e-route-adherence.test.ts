@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkE2eRouteCollision, globToRegExp } from "../../consort/architecture/e2e-route-adherence.js";
+import { checkE2eRouteCollision, checkE2eSeedBackendDerivation, globToRegExp } from "../../consort/architecture/e2e-route-adherence.js";
 import { formatRoleResponse } from "../../consort/session/response-formatter.js";
 
 let dir: string;
@@ -79,5 +79,38 @@ describe("response-formatter navigator scope surfaces the collision", () => {
     spec("ok.spec.ts", `await page.route((url) => new URL(url).pathname === "/api/stock", (r) => r.fulfill({ body: "{}" }));`);
     const res = formatRoleResponse({ role: "navigator", consortDir: consortDir(), featureId: "F1", story: "S2" });
     expect(res.ok).toBe(true);
+  });
+});
+
+describe("checkE2eSeedBackendDerivation (hardcoded/port-swapped seed backend — stockflow-3-90 CI bug)", () => {
+  it("FLAGS deriving the backend by string-replacing the client port (5173->8000)", () => {
+    spec("S2.spec.ts", `const backend = (baseURL ?? "http://127.0.0.1:8000").replace("5173", "8000"); await seedStock(backend, {});`);
+    const r = checkE2eSeedBackendDerivation(dir);
+    expect(r.ok).toBe(false);
+    expect(r.violations).toHaveLength(1);
+    expect(r.violations[0].spec).toMatch(/S2\.spec\.ts:1$/);
+    expect(r.violations[0].remediation).toMatch(/\$\{baseURL\}/);
+  });
+
+  it("FLAGS the colon-prefixed variant (:5173->:8000)", () => {
+    spec("S3.spec.ts", `const backend = baseURL.replace(":5173", ":8000");`);
+    expect(checkE2eSeedBackendDerivation(dir).ok).toBe(false);
+  });
+
+  it("does NOT flag a seed posted through the app origin (${baseURL}/api/...)", () => {
+    spec("ok.spec.ts", "await seedStock(`${baseURL}/api/stock`, {});");
+    expect(checkE2eSeedBackendDerivation(dir).ok).toBe(true);
+  });
+
+  it("is a clean no-op with no client tree", () => {
+    rmSync(join(dir, "client"), { recursive: true, force: true });
+    expect(checkE2eSeedBackendDerivation(dir).ok).toBe(true);
+  });
+
+  it("the navigator self-check surfaces the port-swapped seed", () => {
+    spec("S2.spec.ts", `const backend = baseURL.replace("5173", "8000");`);
+    const res = formatRoleResponse({ role: "navigator", consortDir: join(dir, ".consort"), featureId: "F1", story: "S2" });
+    expect(res.ok).toBe(false);
+    expect(res.violations.some((v) => /string-replacing the client port|\$\{baseURL\}/.test(v.problem))).toBe(true);
   });
 });

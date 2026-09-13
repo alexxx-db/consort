@@ -44,6 +44,7 @@ import { readSupersededTests, readGreenFailure } from "../../smells/supersession
 import { readDeployVerifyAssessMarker, readDeployVerifyScope } from "../../smells/deploy-verify-assess.js";
 import { readRefactorVerifyAssessMarker } from "../../smells/refactor-verify-assess.js";
 import { readConventions } from "../../architecture/architecture-conventions.js";
+import { deliveredFeatures } from "../status/feature-status.js";
 // The build-turn CONTEXT PACK (rubric + layout + test locations) lives in the orchestrator
 // family as the single source of truth – the lean per-role build chains inject the SAME pack.
 import { contextRubric, buildContextPack } from "../build/build-context.js";
@@ -513,6 +514,28 @@ function roleTask(
  * (the orchestrator persists it deterministically). Empty when no conventions
  * exist (the first feature simply establishes them by building normally).
  */
+/**
+ * Appended to the Spec Author's `propose` task: the features prior sprints have ALREADY
+ * DELIVERED, so the sprint proposal builds the NEXT increment instead of re-proposing
+ * shipped work. The propose step is seeded ONLY product-overview.md + nfrs.md (the PO's
+ * forward-worded STANDING intent, which by canon records who/why/how-it-grows, never what
+ * shipped), so without this a re-plan reads the overview as greenfield and re-proposes the
+ * foundation — the exact sprint-2 failure where F1 was re-proposed and the follow-on
+ * increment deferred. Empty on the first sprint (nothing delivered), keeping that prompt
+ * byte-identical. The DETERMINISTIC (capture/replay) propose path never runs this.
+ */
+function deliveredFeaturesDirective(consortDir: string): string {
+  const delivered = deliveredFeatures(consortDir);
+  if (delivered.length === 0) return "";
+  const list = delivered.map((f) => `${f.id} (${f.title})`).join("; ");
+  return (
+    ` Prior sprints have ALREADY DELIVERED: ${list}. These are SHIPPED — do NOT re-propose them or their` +
+    ` foundational scope. Treat product-overview.md as STANDING intent, not a greenfield backlog: propose only the` +
+    ` NEXT increment that builds ON the delivered features (the product-overview's "how it grows"), and if it` +
+    ` extends a delivered feature, say so rather than re-proposing that feature.`
+  );
+}
+
 function architectConventionsDirective(consortDir: string): string {
   const conventions = readConventions(consortDir);
   if (!conventions) {
@@ -567,7 +590,7 @@ function roleTaskBody(
         // Spec Author treat the file as descriptive, invent candidates in its
         // reply, write nothing, then on a re-dispatch claim it "already exists"
         // (the handoff guard then aborts on the empty artifact).
-        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md – author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${uiTrack ? UI_TRACK_PROPOSE : ""}`;
+        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md – author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${deliveredFeaturesDirective(consortDir)}${uiTrack ? UI_TRACK_PROPOSE : ""}`;
       case "estimate":
         return `Estimate each proposed candidate feature with a t-shirt size (XS/S/M/L/XL) and write planning/estimates.json, so the Product Owner can commit a backlog that fits sprint capacity.`;
       case "estimate-committed":

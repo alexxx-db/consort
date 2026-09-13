@@ -161,6 +161,47 @@ describe("commandsForAction: invoke-role -> claude", () => {
     expect(task).toMatch(/write/i);
   });
 
+  it("propose carries an ALREADY-DELIVERED directive so a re-plan never re-proposes a shipped feature", () => {
+    // The sprint-2 greenfield trap: propose is seeded ONLY product-overview.md + nfrs.md (the PO's
+    // forward-worded standing intent), so without a shipped-state signal it re-proposes a delivered
+    // feature's foundation. A delivered feature (every story done + accepted) must surface in the task
+    // as ALREADY DELIVERED; an in-progress feature must NOT (it isn't shipped), and a fresh project
+    // (nothing delivered) must carry NO delivered clause — keeping that first-sprint prompt as it was.
+    const dir = mkdtempSync(join(tmpdir(), "propose-delivered-"));
+    try {
+      // F1: delivered (done + accepted) + a titled request.
+      mkdirSync(join(dir, "features", "F1-stock-visibility"), { recursive: true });
+      writeFileSync(
+        join(dir, "features", "F1-stock-visibility", "pipeline.json"),
+        JSON.stringify({ version: 1, feature_id: "F1-stock-visibility", stories: { S1: { status: "done", acceptance: { decision: "accepted", history: [] } } }, build_queue: [], build_active: null }),
+      );
+      writeFileSync(join(dir, "features", "F1-stock-visibility", "feature-request.md"), "# See and adjust stock at one warehouse\n\nbody\n");
+      // F6: in-progress (building) — must NOT read as delivered.
+      mkdirSync(join(dir, "features", "F6-split-tracking-code"), { recursive: true });
+      writeFileSync(
+        join(dir, "features", "F6-split-tracking-code", "pipeline.json"),
+        JSON.stringify({ version: 1, feature_id: "F6-split-tracking-code", stories: { S1: { status: "building" } }, build_queue: [], build_active: "S1" }),
+      );
+
+      const task = (commandsForAction({ kind: "invoke-role", role: "spec-author", mode: "propose" }, cfg({ consortDir: dir }))[0] as { task: string }).task;
+      expect(task).toContain("ALREADY DELIVERED");
+      expect(task).toContain("F1-stock-visibility (See and adjust stock at one warehouse)"); // id + request H1 title
+      expect(task).toContain("do NOT re-propose");
+      expect(task).not.toContain("F6-split-tracking-code"); // in-progress → not a delivered feature
+
+      // Baseline: a project with nothing delivered carries no delivered clause (first-sprint prompt unchanged).
+      const fresh = mkdtempSync(join(tmpdir(), "propose-fresh-"));
+      try {
+        const freshTask = (commandsForAction({ kind: "invoke-role", role: "spec-author", mode: "propose" }, cfg({ consortDir: fresh }))[0] as { task: string }).task;
+        expect(freshTask).not.toContain("ALREADY DELIVERED");
+      } finally {
+        rmSync(fresh, { recursive: true, force: true });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("propose (capture: recorded requests) is DETERMINISTIC – projects proposals via the Human Proxy, no LLM", () => {
     const cmds = commandsForAction({ kind: "invoke-role", role: "spec-author", mode: "propose" }, cfg({ recordedRequests: true }));
     // No claude spawn – the artifact is code-emitted from the recorded requests.

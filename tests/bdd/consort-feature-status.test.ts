@@ -11,6 +11,7 @@ import {
 import {
   getFeatureStatus,
   renderFeatureStatus,
+  deliveredFeatures,
 } from "../../consort/orchestrator/status/feature-status";
 
 let tdd: string;
@@ -648,5 +649,41 @@ describe("feature-status gates field (G8 /)", () => {
     });
     const text = renderFeatureStatus(getFeatureStatus(tdd, FEATURE_ID));
     expect(text).toMatch(/plan\s+approved @ 2026-05-31T21:00:00\.000Z by po@example\.com/);
+  });
+});
+
+describe("deliveredFeatures", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "delivered-features-"));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  const feature = (id: string, stories: Record<string, unknown>, requestH1?: string) => {
+    mkdirSync(join(dir, "features", id), { recursive: true });
+    writeFileSync(join(dir, "features", id, "pipeline.json"), JSON.stringify({ version: 1, feature_id: id, stories, build_queue: [], build_active: null }));
+    if (requestH1 !== undefined) writeFileSync(join(dir, "features", id, "feature-request.md"), `# ${requestH1}\n\nbody\n`);
+  };
+
+  it("returns a feature whose every story is done + accepted, titled by its request H1", () => {
+    feature("F1-stock-visibility", { S1: { status: "done", acceptance: { decision: "accepted", history: [] } } }, "See and adjust stock");
+    expect(deliveredFeatures(dir)).toEqual([{ id: "F1-stock-visibility", title: "See and adjust stock" }]);
+  });
+
+  it("excludes an in-progress feature (a story still building is not delivered)", () => {
+    feature("F1-done", { S1: { status: "done", acceptance: { decision: "accepted", history: [] } } });
+    feature("F6-wip", { S1: { status: "done", acceptance: { decision: "accepted", history: [] } }, S2: { status: "building" } });
+    expect(deliveredFeatures(dir).map((f) => f.id)).toEqual(["F1-done"]); // F6 has an unbuilt story
+  });
+
+  it("falls back to the id as title when the feature-request.md is absent", () => {
+    feature("F1-notitle", { S1: { status: "done" } }); // no request file
+    expect(deliveredFeatures(dir)).toEqual([{ id: "F1-notitle", title: "F1-notitle" }]);
+  });
+
+  it("is empty for a fresh project (no features dir) and for a feature with no stories", () => {
+    expect(deliveredFeatures(dir)).toEqual([]); // no features/ dir yet
+    feature("F1-empty", {}); // dir + empty pipeline, no stories tracked
+    expect(deliveredFeatures(dir)).toEqual([]); // deriveFeaturePhase(null) → not delivered
   });
 });

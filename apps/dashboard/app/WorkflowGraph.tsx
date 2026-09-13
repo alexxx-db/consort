@@ -96,8 +96,15 @@ export function WorkflowGraph({
   const shipMerging = focus.kind === "step" && focus.step === "dp-merge";
   const shipIssue = focus.kind === "escalation" && activeNode === "promote";
   // Done = the run reached promote and nothing is running now (a clean, blocker-free idle). During
-  // the merge focus is a step (not idle), so this stays false until the merge completes.
-  const shipDone = focus.kind === "idle" && passed.has("promote");
+  // the merge focus is a step (not idle), so this stays false until the merge completes. But
+  // `passed.has("promote")` is sprint-AGNOSTIC — it stays true for the whole run the moment ANY
+  // sprint promotes — so once the `shipped → plan` loop carries the playhead into the next sprint,
+  // an idle moment would relight Shipped while Plan is the active node (both hot at once). Gate on
+  // the playhead NOT having looped back: Shipped is "done" only at the terminal end — activeNode
+  // null (a trailing `workflow` phase.end ended the walk) or still on promote — never while a live
+  // earlier phase (plan/intake/design/build/deploy) is active for the next sprint.
+  const loopedBack = activeNode !== null && activeNode !== "promote" && activeNode !== "shipped";
+  const shipDone = focus.kind === "idle" && passed.has("promote") && !loopedBack;
   const shipLit = shipMerging || shipIssue || shipDone;
   // Merging / a ship-stage escalation move the active node off Promote onto Shipped (Promote then
   // reads as reached); a done run keeps activeNode null and lights Shipped steadily instead.

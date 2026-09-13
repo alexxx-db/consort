@@ -351,3 +351,80 @@ describe("correlate — drift is detected and named", () => {
     ]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. Story scope confines a phantom phase.start (the stockflow-3-90 defect): a role turn that
+// STARTED but recorded no invoke-role turn (a died/retried turn) must not slide every later
+// pairing for that role across story boundaries.
+
+describe("correlate — story scope confines a phantom phase.start", () => {
+  const ps = (role: string, story: string): AgentLogEvent => ({
+    timestamp: "2026-09-12T00:00:00.000Z",
+    level: "info",
+    role,
+    event: "phase.start",
+    message: `${role} START design`,
+    metadata: { phase: "design", story },
+  });
+  const t = (ordinal: number, role: string, story: string | null): TurnIndexEntry => ({
+    ordinal,
+    step: 0,
+    label: `${role}-x`,
+    kind: "invoke-role",
+    role,
+    story,
+    dir: `${String(ordinal).padStart(4, "0")}-${role}`,
+    producedCount: 0,
+    deletedCount: 0,
+    hasTranscript: true,
+  });
+
+  // The exact shape observed on stockflow-3-90: test-strategist emitted 5 phase.starts for S1 but
+  // only 4 S1 invoke-role turns were recorded (one died/retried turn recorded nothing), then 1
+  // phase.start + 1 recorded turn for S2. S2's turn IS in the corpus (ordinal 104).
+  const events = [
+    ps("test-strategist", "S1"),
+    ps("test-strategist", "S1"),
+    ps("test-strategist", "S1"),
+    ps("test-strategist", "S1"),
+    ps("test-strategist", "S1"), // 5th S1 phase.start — the phantom (its turn recorded nothing)
+    ps("test-strategist", "S2"), // the row the user saw with no #ord
+  ];
+  const turns = [
+    t(7, "test-strategist", "S1"),
+    t(11, "test-strategist", "S1"),
+    t(15, "test-strategist", "S1"),
+    t(19, "test-strategist", "S1"), // 4 S1 turns, not 5
+    t(104, "test-strategist", "S2"), // S2's turn IS recorded
+  ];
+
+  it("pairs S2's phase.start to its OWN turn (104), not stolen by the S1 phantom", () => {
+    const r = correlate(events, turns);
+    const byEvent = turnByEvent(r);
+    expect(byEvent.get(5)).toBe(104); // S2 phase.start → ordinal 104 (gets its #ord back)
+    expect([0, 1, 2, 3].map((i) => byEvent.get(i))).toEqual([7, 11, 15, 19]); // S1 turns paired in order
+    // Exactly ONE unpaired event, and it is the phantom's own phase.start (the 5th S1), NOT S2.
+    expect(r.unpairedEvents).toEqual([
+      { eventIndex: 4, role: "test-strategist", phase: "design", reason: "role-exhausted" },
+    ]);
+    // Pairings stay ascending per role (no backwards jump introduced by story matching).
+    const ords = r.pairings.map((p) => p.turnOrdinal);
+    expect(ords).toEqual([...ords].sort((a, b) => a - b));
+  });
+
+  it("a role-ONLY cursor WOULD mis-pair S2 — which is exactly what the story scope prevents", () => {
+    // Kevin's original transcription (the oracle kept in this file) pairs by role order alone: the
+    // 5th S1 phase.start grabs S2's turn and S2's own phase.start is left with nothing.
+    const theirs = kevinEventTurn(events, turns);
+    expect(theirs[4]).toBe(104); // S1's phantom phase.start wrongly took S2's turn
+    expect(theirs[5]).toBeUndefined(); // S2's phase.start → no turn → the missing #ord
+  });
+
+  it("falls back to plain role order when the turns carry no story (older corpus, byte-identical)", () => {
+    const noStory = turns.map((x) => t(x.ordinal, "test-strategist", null));
+    const r = correlate(events, noStory);
+    // 6 phase.starts, 5 story-less turns → first 5 pair in order, the 6th is the drift tail.
+    expect(r.pairings.map((p) => p.turnOrdinal)).toEqual([7, 11, 15, 19, 104]);
+    expect(r.unpairedEvents.map((u) => u.eventIndex)).toEqual([5]);
+  });
+});

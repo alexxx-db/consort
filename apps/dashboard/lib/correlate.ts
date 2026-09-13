@@ -3,11 +3,16 @@
 // This is the fragile part of replay mode, and the plan's §6 names it the top risk. The
 // algorithm is Kevin's, transcribed from `_dashboard_template.html:312-325`: walk the log in
 // order, and for each `phase.start` carrying a non-orchestrator role, take that role's next
-// unconsumed `invoke-role` turn. A per-role cursor, nothing more.
+// unconsumed `invoke-role` turn WITH THE SAME STORY. A per-(role, story) cursor — falling back
+// to plain role order for a story-less event or a role whose turns carry no story stamp.
 //
-// It is correct when the log and the corpus are the same run at the same kit version, and it
-// CANNOT DETECT that they aren't. An off-by-one early in a role mis-maps every later turn for
-// that role — wrong transcript, wrong code, no error. That is the same failure class as the
+// The story scope is load-bearing: a phantom `phase.start` (a role turn that started but recorded
+// NO `invoke-role` turn — a died/retried turn) would, under a role-ONLY cursor, slide every later
+// pairing for that role by one across story boundaries — wrong transcript, wrong code, no error.
+// Scoping the cursor to the story confines that off-by-one to the ONE story that actually had the
+// phantom (its last `phase.start` reads unpaired, which the report surfaces) instead of cascading
+// into every later story. It still CANNOT detect a genuine log/corpus mismatch, so this module's
+// real job remains the REPORT. That is the same failure class as the
 // `REPLAY CORPUS MISS` on `dba S1-record-stock` (corpus captured v0.3.0-beta.14 against a
 // v0.3.5 pipeline). So this module's real job is not the pairing — it is the REPORT.
 //
@@ -138,7 +143,15 @@ export function correlate(
     else byRole.set(t.role, [t]);
   }
 
-  const cursor = new Map<string, number>();
+  // Whether a role's turns carry story stamps at all. Story-scoped pairing (below) applies ONLY
+  // then, so a corpus whose turns predate per-story stamping — or a story-less single-feature run —
+  // keeps the pure role-order behaviour byte-identical.
+  const roleHasStory = new Map<string, boolean>();
+  for (const [role, list] of byRole) roleHasStory.set(role, list.some((t) => !!t.story));
+
+  // Consumed turn INDICES per role (into that role's byRole list), so a turn pairs at most once
+  // whether matched by story or by plain order.
+  const consumed = new Map<string, Set<number>>();
   const pairings: Pairing[] = [];
   const unpairedEvents: UnpairedEvent[] = [];
   const structural: CorrelationReport["structural"] = [];
@@ -155,15 +168,32 @@ export function correlate(
       return;
     }
 
+    const story = typeof md.story === "string" ? md.story : null;
     const list = byRole.get(role) ?? [];
-    const k = cursor.get(role) ?? 0;
-    const turn = list[k];
-    if (turn) {
-      pairings.push({ eventIndex, turnOrdinal: turn.ordinal, role, phase });
-      cursor.set(role, k + 1);
+    let used = consumed.get(role);
+    if (!used) {
+      used = new Set<number>();
+      consumed.set(role, used);
+    }
+    // Story-scoped pairing: when the role's turns carry stories AND this event names one, take the
+    // next UNCONSUMED turn with the SAME story. A phantom/died phase.start then leaves only ITS OWN
+    // story's last phase.start unpaired instead of sliding the cursor into the next story's turns
+    // (the off-by-one cascade). A story-less event, or a role whose turns carry no story, falls back
+    // to the next unconsumed turn in plain order — the prior per-role behaviour, byte-identical.
+    const wantStory = story !== null && roleHasStory.get(role) === true ? story : null;
+    let idx = -1;
+    for (let i = 0; i < list.length; i++) {
+      if (used.has(i)) continue;
+      if (wantStory !== null && (list[i].story ?? null) !== wantStory) continue;
+      idx = i;
+      break;
+    }
+    if (idx >= 0) {
+      used.add(idx);
+      pairings.push({ eventIndex, turnOrdinal: list[idx].ordinal, role, phase });
     } else {
-      // Distinguish "this role ran out" from "the corpus has never heard of this role" —
-      // the second is a much stronger signal that the log and corpus are different runs.
+      // Distinguish "this role (or its story) ran out" from "the corpus has never heard of this
+      // role" — the second is a much stronger signal that the log and corpus are different runs.
       unpairedEvents.push({
         eventIndex,
         role,
@@ -176,11 +206,11 @@ export function correlate(
   const cursors: CorrelationReport["cursors"] = {};
   const unpairedTurns: CorrelationReport["unpairedTurns"] = [];
   for (const [role, list] of byRole) {
-    const consumed = cursor.get(role) ?? 0;
-    cursors[role] = { consumed, available: list.length };
-    for (const t of list.slice(consumed)) {
-      unpairedTurns.push({ ordinal: t.ordinal, role, label: t.label });
-    }
+    const used = consumed.get(role) ?? new Set<number>();
+    cursors[role] = { consumed: used.size, available: list.length };
+    list.forEach((t, i) => {
+      if (!used.has(i)) unpairedTurns.push({ ordinal: t.ordinal, role, label: t.label });
+    });
   }
   unpairedTurns.sort((a, b) => a.ordinal - b.ordinal);
 

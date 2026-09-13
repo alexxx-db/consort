@@ -142,3 +142,54 @@ export function checkE2eRouteCollision(projectDir: string): E2eRouteResult {
 export function summarizeE2eRouteViolations(r: E2eRouteResult): string {
   return r.violations.map((x) => `${x.spec}: ${x.remediation}`).join(" | ");
 }
+
+export interface E2eSeedViolation {
+  /** The E2E spec + line (project-relative) with the brittle backend-URL derivation. */
+  spec: string;
+  /** The offending source line (trimmed). */
+  snippet: string;
+  remediation: string;
+}
+export interface E2eSeedResult {
+  ok: boolean;
+  violations: E2eSeedViolation[];
+}
+
+/** Flags an E2E that derives the backend URL by string-REPLACING the client port to seed via the
+ *  API — e.g. `baseURL.replace("5173", "8000")` / `.replace(":5173", ":8000")`. That hardcodes the
+ *  backend port, so when a shared CI runner finds 8000 busy and bumps the backend to a free port
+ *  (→ 8001), the seed still POSTs to 8000 — a stale/other server that returns 2xx and writes to a
+ *  DIFFERENT database — while the app reads the resolved port. The seeded rows never render
+ *  (toBeVisible times out): GREEN locally where 8000 is free (the replace is a no-op), RED in CI.
+ *  Fix: POST through the app's OWN origin (`${baseURL}/api/...`), riding the same resolved Vite
+ *  proxy the app uses, so seed + app always hit the same backend/DB. No client tree => clean no-op. */
+export function checkE2eSeedBackendDerivation(projectDir: string): E2eSeedResult {
+  const e2eRoot = join(projectDir, E2E_DIR);
+  if (!existsSync(e2eRoot)) return { ok: true, violations: [] };
+  // The confirmed brittle pattern: swapping the client port for the backend port (5173 -> 8000),
+  // with or without a leading colon. A pathname/app-origin seed carries no such replace.
+  const portSwap = /\.replace\(\s*(['"`]):?5173\1\s*,\s*(['"`]):?8000\2\s*\)/;
+  const violations: E2eSeedViolation[] = [];
+  for (const spec of walk(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let source: string;
+    try {
+      source = readFileSync(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = relative(projectDir, spec).split(/[\\/]/).join("/");
+    source.split("\n").forEach((ln, i) => {
+      if (!portSwap.test(ln)) return;
+      violations.push({
+        spec: `${specRel}:${i + 1}`,
+        snippet: ln.trim().slice(0, 160),
+        remediation:
+          "E2E seed derives the backend by string-replacing the client port (5173->8000), which hardcodes the " +
+          "backend port: a shared CI runner bumps the backend off a busy 8000, so the seed POSTs to a stale server / " +
+          "different DB (2xx, so it does not throw) and the rows never render — GREEN locally (8000 free), RED in CI. " +
+          "POST through the app's OWN origin instead — `${baseURL}/api/...` — so seed + app share the resolved backend.",
+      });
+    });
+  }
+  return { ok: violations.length === 0, violations };
+}
