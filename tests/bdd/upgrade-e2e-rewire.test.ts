@@ -48,6 +48,9 @@ describe("refreshSurface re-wires the E2E block for a UI project (upgrade must n
     const r = refreshSurface(dir, KIT_ROOT, "v0.3.52-test");
     expect(r.e2e).toBe(false);
     expect(runTests()).not.toMatch(/playwright test/);
+    // ...but the orphan-client-tests false-green guard IS ported into the template (it carries no
+    // `playwright test` string), so a backend-only upgrade still gets the hollow-pass fail-fast.
+    expect(runTests()).toMatch(/FALSE-GREEN GUARD/);
   });
 
   it("substitutes {{LAKEBASE_SCM_UTILS_VERSION}} in the refreshed CI workflows (no literal placeholder ships)", () => {
