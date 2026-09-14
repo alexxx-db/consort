@@ -222,3 +222,13 @@ snapshot_date,referrer,count,uniques
 "2026-09-13","lakebase-cookbook.com",2,2
 "2026-09-13","t.co",1,1
 "2026-09-13","teams.public.onecdn.static.microsoft",23,11
+"2026-09-14","Bing",1,1
+"2026-09-14","Google",48,31
+"2026-09-14","arxiv.org",1,1
+"2026-09-14","chatgpt.com",4,1
+"2026-09-14","com.slack",1,1
+"2026-09-14","community.databricks.com",1,1
+"2026-09-14","github.com",86,26
+"2026-09-14","lakebase-cookbook.com",1,1
+"2026-09-14","t.co",1,1
+"2026-09-14","teams.public.onecdn.static.microsoft",23,11
