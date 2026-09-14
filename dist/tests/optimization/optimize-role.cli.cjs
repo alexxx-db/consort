@@ -17685,6 +17685,68 @@ function designGuideConformance(consortDir) {
   return r.ok ? { ok: true } : { ok: false, problem: r.violations.join("; ") };
 }
 
+// consort/orchestrator/status/feature-status.ts
+init_cjs_shims();
+var import_fs17 = require("fs");
+var import_path15 = require("path");
+
+// consort/gates/design-spec-gate.ts
+init_cjs_shims();
+
+// consort/experiment/spike-carryforward.ts
+init_cjs_shims();
+
+// consort/orchestrator/status/feature-status.ts
+function summarizeStories(consortDir, featureId) {
+  let pipeline;
+  try {
+    pipeline = readPipeline(consortDir, featureId);
+  } catch {
+    return [];
+  }
+  return Object.entries(pipeline.stories).map(([story_id, e]) => ({
+    story_id,
+    status: e.status,
+    gate_status: e.gate?.status ?? null,
+    accepted: e.acceptance?.decision === "accepted" || e.status === "done"
+  }));
+}
+function deriveFeaturePhase(stories) {
+  if (stories.length === 0) return null;
+  if (stories.every((s) => s.status === "done" && s.accepted)) return "complete";
+  const inBuild = (s) => s.status === "ready" || s.status === "building" || s.status === "awaiting-acceptance" || s.status === "done" || s.gate_status === "approved";
+  if (stories.some(inBuild)) return "build";
+  return "design";
+}
+function featureRequestTitle(featureDirPath, id) {
+  const p = (0, import_path15.join)(featureDirPath, "feature-request.md");
+  if (!(0, import_fs17.existsSync)(p)) return id;
+  try {
+    const h1 = (0, import_fs17.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    return h1 ? h1.replace(/^#\s+/, "").trim() : id;
+  } catch {
+    return id;
+  }
+}
+function deliveredFeatures(consortDir) {
+  const root = featuresDir(consortDir);
+  if (!(0, import_fs17.existsSync)(root)) return [];
+  const out = [];
+  const ids = (0, import_fs17.readdirSync)(root).filter((d) => {
+    try {
+      return (0, import_fs17.statSync)((0, import_path15.join)(root, d)).isDirectory();
+    } catch {
+      return false;
+    }
+  }).sort();
+  for (const id of ids) {
+    const stories = summarizeStories(consortDir, id);
+    if (deriveFeaturePhase(stories) !== "complete") continue;
+    out.push({ id, title: featureRequestTitle((0, import_path15.join)(root, id), id) });
+  }
+  return out;
+}
+
 // consort/orchestrator/drive/orchestrator-effects.ts
 var import_util3 = require("@databricks-solutions/lakebase-scm-utils/util");
 var UI_TRACK_PROPOSE = ` UI track is ON: this product has a user-facing UI (a design-brief.md is part of intake), so every user-facing capability must be deliverable end to end as an E2E story, a real browser/screen interaction a user performs, not merely an API. Frame each candidate as a user-facing increment and note which need an E2E (UI) story.`;
@@ -17802,6 +17864,12 @@ function consumeHandback(action, featureId, consortDir) {
 
 ` : "";
 }
+function deliveredFeaturesDirective(consortDir) {
+  const delivered = deliveredFeatures(consortDir);
+  if (delivered.length === 0) return "";
+  const list = delivered.map((f) => `${f.id} (${f.title})`).join("; ");
+  return ` Prior sprints have ALREADY DELIVERED: ${list}. These are SHIPPED \u2014 do NOT re-propose them or their foundational scope. Treat product-overview.md as STANDING intent, not a greenfield backlog: propose only the NEXT increment that builds ON the delivered features (the product-overview's "how it grows"), and if it extends a delivered feature, say so rather than re-proposing that feature.`;
+}
 function architectConventionsDirective(consortDir) {
   const conventions = readConventions(consortDir);
   if (!conventions) {
@@ -17818,7 +17886,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
   if ("mode" in action) {
     switch (action.mode) {
       case "propose":
-        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md \u2013 author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${uiTrack ? UI_TRACK_PROPOSE : ""}`;
+        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md \u2013 author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${deliveredFeaturesDirective(consortDir)}${uiTrack ? UI_TRACK_PROPOSE : ""}`;
       case "estimate":
         return `Estimate each proposed candidate feature with a t-shirt size (XS/S/M/L/XL) and write planning/estimates.json, so the Product Owner can commit a backlog that fits sprint capacity.`;
       case "estimate-committed":
@@ -18523,14 +18591,14 @@ function buildDriveEffects(cfg) {
 
 // consort/session/run-config.ts
 init_cjs_shims();
-var import_fs17 = require("fs");
-var import_path15 = require("path");
-var RUN_CONFIG_REL = (0, import_path15.join)(ARTIFACT_ROOT, "run-config.json");
+var import_fs18 = require("fs");
+var import_path16 = require("path");
+var RUN_CONFIG_REL = (0, import_path16.join)(ARTIFACT_ROOT, "run-config.json");
 function readRunConfig(consortDir) {
-  const f = (0, import_path15.join)(consortDir, "run-config.json");
-  if (!(0, import_fs17.existsSync)(f)) return void 0;
+  const f = (0, import_path16.join)(consortDir, "run-config.json");
+  if (!(0, import_fs18.existsSync)(f)) return void 0;
   try {
-    return JSON.parse((0, import_fs17.readFileSync)(f, "utf8"));
+    return JSON.parse((0, import_fs18.readFileSync)(f, "utf8"));
   } catch {
     return void 0;
   }
@@ -18538,25 +18606,25 @@ function readRunConfig(consortDir) {
 
 // tests/optimization/replay-turn.ts
 init_cjs_shims();
-var import_fs18 = require("fs");
-var import_path16 = require("path");
+var import_fs19 = require("fs");
+var import_path17 = require("path");
 function rehydrate(text, projectDir) {
   const root = projectDir.replace(/\/+$/, "");
   if (!text || !root) return text;
   return text.split(PROJECT_ROOT_TOKEN).join(root);
 }
 function readReplaySet(turnDir) {
-  const setDir = (0, import_path16.join)(turnDir, "replay-set");
-  const promptPath = (0, import_path16.join)(setDir, "prompt.txt");
-  if (!(0, import_fs18.existsSync)(promptPath)) throw new Error(`replay-set incomplete: no prompt.txt under ${setDir}`);
-  const turn = JSON.parse((0, import_fs18.readFileSync)((0, import_path16.join)(turnDir, "turn.json"), "utf8"));
-  const leversPath = (0, import_path16.join)(setDir, "levers.json");
-  const levers = (0, import_fs18.existsSync)(leversPath) ? JSON.parse((0, import_fs18.readFileSync)(leversPath, "utf8")) : {};
-  const inDir = (0, import_path16.join)(setDir, "inputs");
+  const setDir = (0, import_path17.join)(turnDir, "replay-set");
+  const promptPath = (0, import_path17.join)(setDir, "prompt.txt");
+  if (!(0, import_fs19.existsSync)(promptPath)) throw new Error(`replay-set incomplete: no prompt.txt under ${setDir}`);
+  const turn = JSON.parse((0, import_fs19.readFileSync)((0, import_path17.join)(turnDir, "turn.json"), "utf8"));
+  const leversPath = (0, import_path17.join)(setDir, "levers.json");
+  const levers = (0, import_fs19.existsSync)(leversPath) ? JSON.parse((0, import_fs19.readFileSync)(leversPath, "utf8")) : {};
+  const inDir = (0, import_path17.join)(setDir, "inputs");
   const inputs = {};
-  if ((0, import_fs18.existsSync)(inDir)) {
-    for (const e of (0, import_fs18.readdirSync)(inDir, { withFileTypes: true })) {
-      if (e.isFile()) inputs[e.name] = (0, import_fs18.readFileSync)((0, import_path16.join)(inDir, e.name), "utf8");
+  if ((0, import_fs19.existsSync)(inDir)) {
+    for (const e of (0, import_fs19.readdirSync)(inDir, { withFileTypes: true })) {
+      if (e.isFile()) inputs[e.name] = (0, import_fs19.readFileSync)((0, import_path17.join)(inDir, e.name), "utf8");
     }
   }
   return {
@@ -18565,10 +18633,10 @@ function readReplaySet(turnDir) {
     role: turn.role ?? levers.role ?? "",
     story: turn.story,
     action: turn.action ?? {},
-    promptRaw: (0, import_fs18.readFileSync)(promptPath, "utf8"),
+    promptRaw: (0, import_fs19.readFileSync)(promptPath, "utf8"),
     levers,
     inputs,
-    preProjectDir: (0, import_path16.join)(setDir, "pre-project")
+    preProjectDir: (0, import_path17.join)(setDir, "pre-project")
   };
 }
 
@@ -19149,7 +19217,7 @@ async function runDriverGreenOnScaffold(project, opts = {}) {
 
 // tests/optimization/experiment-config.ts
 init_cjs_shims();
-var import_fs19 = require("fs");
+var import_fs20 = require("fs");
 var KNOWN_ROLES = [
   "architect-reviewer",
   "test-strategist",
@@ -19204,7 +19272,7 @@ function toLeverPatch(spec, candidateId) {
   return patch;
 }
 function loadExperimentConfig(path11) {
-  const raw = JSON.parse((0, import_fs19.readFileSync)(path11, "utf8"));
+  const raw = JSON.parse((0, import_fs20.readFileSync)(path11, "utf8"));
   if (!raw.name || typeof raw.name !== "string") throw new Error(`experiment config ${path11}: missing "name"`);
   if (!raw.turn || typeof raw.turn !== "string") throw new Error(`experiment config ${path11}: missing "turn" (the corpus turn label)`);
   const discriminator = raw.discriminator ?? discriminatorFromLabel(raw.turn);

@@ -9315,6 +9315,8 @@ function approveHint(gate, ctx = {}) {
 
 // consort/orchestrator/status/feature-status.ts
 init_cjs_shims();
+var import_fs14 = require("fs");
+var import_path11 = require("path");
 
 // consort/orchestrator/state/orchestrator-probe.ts
 init_cjs_shims();
@@ -10342,6 +10344,34 @@ function deriveFeaturePhase(stories) {
   const inBuild = (s) => s.status === "ready" || s.status === "building" || s.status === "awaiting-acceptance" || s.status === "done" || s.gate_status === "approved";
   if (stories.some(inBuild)) return "build";
   return "design";
+}
+function featureRequestTitle(featureDirPath, id) {
+  const p = (0, import_path11.join)(featureDirPath, "feature-request.md");
+  if (!(0, import_fs14.existsSync)(p)) return id;
+  try {
+    const h1 = (0, import_fs14.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    return h1 ? h1.replace(/^#\s+/, "").trim() : id;
+  } catch {
+    return id;
+  }
+}
+function deliveredFeatures(consortDir) {
+  const root = featuresDir(consortDir);
+  if (!(0, import_fs14.existsSync)(root)) return [];
+  const out = [];
+  const ids = (0, import_fs14.readdirSync)(root).filter((d) => {
+    try {
+      return (0, import_fs14.statSync)((0, import_path11.join)(root, d)).isDirectory();
+    } catch {
+      return false;
+    }
+  }).sort();
+  for (const id of ids) {
+    const stories = summarizeStories(consortDir, id);
+    if (deriveFeaturePhase(stories) !== "complete") continue;
+    out.push({ id, title: featureRequestTitle((0, import_path11.join)(root, id), id) });
+  }
+  return out;
 }
 
 // consort/orchestrator/drive/orchestrator-effects.ts
@@ -11866,8 +11896,8 @@ var readline = __toESM(require("readline"), 1);
 
 // consort/logging/replay-artifacts.ts
 init_cjs_shims();
-var import_fs14 = require("fs");
-var import_path11 = require("path");
+var import_fs15 = require("fs");
+var import_path12 = require("path");
 var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "spec-author",
   "architect-reviewer",
@@ -11877,79 +11907,79 @@ var REPLAYABLE_DESIGN_ROLES = /* @__PURE__ */ new Set([
   "product-owner"
 ]);
 function cp(src, dst) {
-  if (!(0, import_fs14.existsSync)(src)) return false;
-  (0, import_fs14.mkdirSync)((0, import_path11.dirname)(dst), { recursive: true });
-  (0, import_fs14.copyFileSync)(src, dst);
+  if (!(0, import_fs15.existsSync)(src)) return false;
+  (0, import_fs15.mkdirSync)((0, import_path12.dirname)(dst), { recursive: true });
+  (0, import_fs15.copyFileSync)(src, dst);
   return true;
 }
 function cpDir(srcDir, dstDir) {
-  if (!(0, import_fs14.existsSync)(srcDir)) return false;
+  if (!(0, import_fs15.existsSync)(srcDir)) return false;
   let copied = false;
-  (0, import_fs14.mkdirSync)(dstDir, { recursive: true });
-  for (const name of (0, import_fs14.readdirSync)(srcDir)) {
-    const s = (0, import_path11.join)(srcDir, name);
-    if (!(0, import_fs14.statSync)(s).isFile()) continue;
-    (0, import_fs14.copyFileSync)(s, (0, import_path11.join)(dstDir, name));
+  (0, import_fs15.mkdirSync)(dstDir, { recursive: true });
+  for (const name of (0, import_fs15.readdirSync)(srcDir)) {
+    const s = (0, import_path12.join)(srcDir, name);
+    if (!(0, import_fs15.statSync)(s).isFile()) continue;
+    (0, import_fs15.copyFileSync)(s, (0, import_path12.join)(dstDir, name));
     copied = true;
   }
   return copied;
 }
 function replayDesignTurn(args) {
   const { turn, replayDir, consortDir, featureId } = args;
-  const cf = (0, import_path11.join)(featuresDir(replayDir), featureId);
-  const tf = (0, import_path11.join)(featuresDir(consortDir), featureId);
+  const cf = (0, import_path12.join)(featuresDir(replayDir), featureId);
+  const tf = (0, import_path12.join)(featuresDir(consortDir), featureId);
   switch (turn.role) {
     case "spec-author": {
       if (turn.mode === "propose") {
-        return cp((0, import_path11.join)(replayDir, "planning", "feature-proposals.md"), (0, import_path11.join)(consortDir, "planning", "feature-proposals.md"));
+        return cp((0, import_path12.join)(replayDir, "planning", "feature-proposals.md"), (0, import_path12.join)(consortDir, "planning", "feature-proposals.md"));
       }
       if (turn.mode === "breakdown") {
-        let ok = cp((0, import_path11.join)(cf, "feature-spec.json"), (0, import_path11.join)(tf, "feature-spec.json"));
-        cp((0, import_path11.join)(cf, "feature-spec.md"), (0, import_path11.join)(tf, "feature-spec.md"));
-        const storiesSrc = (0, import_path11.join)(cf, "stories");
-        if ((0, import_fs14.existsSync)(storiesSrc)) {
-          for (const s of (0, import_fs14.readdirSync)(storiesSrc)) {
-            cp((0, import_path11.join)(storiesSrc, s, "story.json"), (0, import_path11.join)(tf, "stories", s, "story.json"));
-            cp((0, import_path11.join)(storiesSrc, s, "story.md"), (0, import_path11.join)(tf, "stories", s, "story.md"));
+        let ok = cp((0, import_path12.join)(cf, "feature-spec.json"), (0, import_path12.join)(tf, "feature-spec.json"));
+        cp((0, import_path12.join)(cf, "feature-spec.md"), (0, import_path12.join)(tf, "feature-spec.md"));
+        const storiesSrc = (0, import_path12.join)(cf, "stories");
+        if ((0, import_fs15.existsSync)(storiesSrc)) {
+          for (const s of (0, import_fs15.readdirSync)(storiesSrc)) {
+            cp((0, import_path12.join)(storiesSrc, s, "story.json"), (0, import_path12.join)(tf, "stories", s, "story.json"));
+            cp((0, import_path12.join)(storiesSrc, s, "story.md"), (0, import_path12.join)(tf, "stories", s, "story.md"));
           }
         }
         return ok;
       }
       if (turn.story) {
-        return cpDir((0, import_path11.join)(cf, "stories", turn.story, "acs"), (0, import_path11.join)(tf, "stories", turn.story, "acs"));
+        return cpDir((0, import_path12.join)(cf, "stories", turn.story, "acs"), (0, import_path12.join)(tf, "stories", turn.story, "acs"));
       }
       return false;
     }
     case "architect-reviewer": {
       if (turn.mode === "estimate" || turn.mode === "estimate-committed") {
-        return cp((0, import_path11.join)(replayDir, "planning", "estimates.json"), (0, import_path11.join)(consortDir, "planning", "estimates.json"));
+        return cp((0, import_path12.join)(replayDir, "planning", "estimates.json"), (0, import_path12.join)(consortDir, "planning", "estimates.json"));
       }
-      let ok = cp((0, import_path11.join)(cf, "architecture.json"), (0, import_path11.join)(tf, "architecture.json"));
-      cp((0, import_path11.join)(cf, "architecture.md"), (0, import_path11.join)(tf, "architecture.md"));
+      let ok = cp((0, import_path12.join)(cf, "architecture.json"), (0, import_path12.join)(tf, "architecture.json"));
+      cp((0, import_path12.join)(cf, "architecture.md"), (0, import_path12.join)(tf, "architecture.md"));
       if (turn.story) {
-        const acs = cpDir((0, import_path11.join)(cf, "stories", turn.story, "acs"), (0, import_path11.join)(tf, "stories", turn.story, "acs"));
+        const acs = cpDir((0, import_path12.join)(cf, "stories", turn.story, "acs"), (0, import_path12.join)(tf, "stories", turn.story, "acs"));
         ok = ok || acs;
       }
       return ok;
     }
     case "dba": {
-      let ok = cp((0, import_path11.join)(cf, "db-design.json"), (0, import_path11.join)(tf, "db-design.json"));
-      cp((0, import_path11.join)(cf, "db-design.md"), (0, import_path11.join)(tf, "db-design.md"));
+      let ok = cp((0, import_path12.join)(cf, "db-design.json"), (0, import_path12.join)(tf, "db-design.json"));
+      cp((0, import_path12.join)(cf, "db-design.md"), (0, import_path12.join)(tf, "db-design.md"));
       return ok;
     }
     case "test-strategist": {
-      let ok = cp((0, import_path11.join)(cf, "test-list.json"), (0, import_path11.join)(tf, "test-list.json"));
-      cp((0, import_path11.join)(cf, "test-list.md"), (0, import_path11.join)(tf, "test-list.md"));
+      let ok = cp((0, import_path12.join)(cf, "test-list.json"), (0, import_path12.join)(tf, "test-list.json"));
+      cp((0, import_path12.join)(cf, "test-list.md"), (0, import_path12.join)(tf, "test-list.md"));
       const story = turn.story;
       if (story) {
-        cp((0, import_path11.join)(cf, "stories", story, "test-list-per-ac.json"), (0, import_path11.join)(tf, "stories", story, "test-list-per-ac.json"));
+        cp((0, import_path12.join)(cf, "stories", story, "test-list-per-ac.json"), (0, import_path12.join)(tf, "stories", story, "test-list-per-ac.json"));
       }
       return ok;
     }
     case "ux-designer": {
-      let ok = cp((0, import_path11.join)(replayDir, "design", "design-guide.json"), (0, import_path11.join)(consortDir, "design", "design-guide.json"));
-      cp((0, import_path11.join)(replayDir, "design", "design-guide.md"), (0, import_path11.join)(consortDir, "design", "design-guide.md"));
-      cp((0, import_path11.join)(replayDir, "design", "ia.md"), (0, import_path11.join)(consortDir, "design", "ia.md"));
+      let ok = cp((0, import_path12.join)(replayDir, "design", "design-guide.json"), (0, import_path12.join)(consortDir, "design", "design-guide.json"));
+      cp((0, import_path12.join)(replayDir, "design", "design-guide.md"), (0, import_path12.join)(consortDir, "design", "design-guide.md"));
+      cp((0, import_path12.join)(replayDir, "design", "ia.md"), (0, import_path12.join)(consortDir, "design", "ia.md"));
       return ok;
     }
     default:
@@ -11959,8 +11989,8 @@ function replayDesignTurn(args) {
 function restoreReflectVerdict(args) {
   const { replayDir, consortDir, featureId, story } = args;
   return cp(
-    (0, import_path11.join)(featuresDir(replayDir), featureId, "stories", story, "reflect-verdict.json"),
-    (0, import_path11.join)(featuresDir(consortDir), featureId, "stories", story, "reflect-verdict.json")
+    (0, import_path12.join)(featuresDir(replayDir), featureId, "stories", story, "reflect-verdict.json"),
+    (0, import_path12.join)(featuresDir(consortDir), featureId, "stories", story, "reflect-verdict.json")
   );
 }
 
@@ -14041,6 +14071,12 @@ function consumeHandback(action, featureId, consortDir) {
 
 ` : "";
 }
+function deliveredFeaturesDirective(consortDir) {
+  const delivered = deliveredFeatures(consortDir);
+  if (delivered.length === 0) return "";
+  const list = delivered.map((f) => `${f.id} (${f.title})`).join("; ");
+  return ` Prior sprints have ALREADY DELIVERED: ${list}. These are SHIPPED \u2014 do NOT re-propose them or their foundational scope. Treat product-overview.md as STANDING intent, not a greenfield backlog: propose only the NEXT increment that builds ON the delivered features (the product-overview's "how it grows"), and if it extends a delivered feature, say so rather than re-proposing that feature.`;
+}
 function architectConventionsDirective(consortDir) {
   const conventions = readConventions(consortDir);
   if (!conventions) {
@@ -14057,7 +14093,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
   if ("mode" in action) {
     switch (action.mode) {
       case "propose":
-        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md \u2013 author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${uiTrack ? UI_TRACK_PROPOSE : ""}`;
+        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md \u2013 author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${deliveredFeaturesDirective(consortDir)}${uiTrack ? UI_TRACK_PROPOSE : ""}`;
       case "estimate":
         return `Estimate each proposed candidate feature with a t-shirt size (XS/S/M/L/XL) and write planning/estimates.json, so the Product Owner can commit a backlog that fits sprint capacity.`;
       case "estimate-committed":
@@ -15172,9 +15208,9 @@ async function driveAuthPreflight(host, check = import_lakebase11.checkDatabrick
 
 // consort/session/run-config.ts
 init_cjs_shims();
-var import_fs15 = require("fs");
-var import_path12 = require("path");
-var RUN_CONFIG_REL = (0, import_path12.join)(ARTIFACT_ROOT, "run-config.json");
+var import_fs16 = require("fs");
+var import_path13 = require("path");
+var RUN_CONFIG_REL = (0, import_path13.join)(ARTIFACT_ROOT, "run-config.json");
 function buildRunConfig(inputs) {
   const env = inputs.env ?? process.env;
   const models = {};
@@ -15205,12 +15241,12 @@ function writeRunConfig(inputs) {
   const cfg = buildRunConfig(inputs);
   const body = JSON.stringify(cfg, null, 2) + "\n";
   try {
-    (0, import_fs15.mkdirSync)(inputs.consortDir, { recursive: true });
-    (0, import_fs15.writeFileSync)((0, import_path12.join)(inputs.consortDir, "run-config.json"), body);
+    (0, import_fs16.mkdirSync)(inputs.consortDir, { recursive: true });
+    (0, import_fs16.writeFileSync)((0, import_path13.join)(inputs.consortDir, "run-config.json"), body);
     const recordDir = consortEnv("RECORD_DIR", inputs.env ?? process.env)?.trim();
     if (recordDir) {
-      (0, import_fs15.mkdirSync)(recordDir, { recursive: true });
-      (0, import_fs15.writeFileSync)((0, import_path12.join)(recordDir, "run-config.json"), body);
+      (0, import_fs16.mkdirSync)(recordDir, { recursive: true });
+      (0, import_fs16.writeFileSync)((0, import_path13.join)(recordDir, "run-config.json"), body);
     }
   } catch {
   }

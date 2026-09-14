@@ -14437,6 +14437,30 @@ function checkE2eRouteCollision(projectDir) {
   }
   return { ok: violations.length === 0, violations };
 }
+function checkE2eSeedBackendDerivation(projectDir) {
+  const e2eRoot = (0, import_node_path20.join)(projectDir, E2E_DIR);
+  if (!(0, import_node_fs18.existsSync)(e2eRoot)) return { ok: true, violations: [] };
+  const portSwap = /\.replace\(\s*(['"`]):?5173\1\s*,\s*(['"`]):?8000\2\s*\)/;
+  const violations = [];
+  for (const spec of walk2(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = (0, import_node_fs18.readFileSync)(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = (0, import_node_path20.relative)(projectDir, spec).split(/[\\/]/).join("/");
+    source.split("\n").forEach((ln, i) => {
+      if (!portSwap.test(ln)) return;
+      violations.push({
+        spec: `${specRel}:${i + 1}`,
+        snippet: ln.trim().slice(0, 160),
+        remediation: "E2E seed derives the backend by string-replacing the client port (5173->8000), which hardcodes the backend port: a shared CI runner bumps the backend off a busy 8000, so the seed POSTs to a stale server / different DB (2xx, so it does not throw) and the rows never render \u2014 GREEN locally (8000 free), RED in CI. POST through the app's OWN origin instead \u2014 `${baseURL}/api/...` \u2014 so seed + app share the resolved backend."
+      });
+    });
+  }
+  return { ok: violations.length === 0, violations };
+}
 
 // consort/session/response-formatter.ts
 function needStory(role, story, violations) {
@@ -14704,8 +14728,9 @@ function checkUxDesigner(args, v) {
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
 function checkNavigator(args, v) {
-  const r = checkE2eRouteCollision((0, import_node_path21.dirname)(args.consortDir));
-  for (const x of r.violations) v.push({ artifact: x.spec, problem: x.remediation });
+  const projectDir = (0, import_node_path21.dirname)(args.consortDir);
+  for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
 var CHECKERS = {
   "spec-author": checkSpecAuthor,
@@ -14720,6 +14745,68 @@ function formatRoleResponse(args) {
   const checker = CHECKERS[args.role];
   if (checker) checker(args, violations);
   return { role: args.role, ...args.story ? { story: args.story } : {}, ok: violations.length === 0, violations };
+}
+
+// consort/orchestrator/status/feature-status.ts
+init_cjs_shims();
+var import_fs19 = require("fs");
+var import_path15 = require("path");
+
+// consort/gates/design-spec-gate.ts
+init_cjs_shims();
+
+// consort/experiment/spike-carryforward.ts
+init_cjs_shims();
+
+// consort/orchestrator/status/feature-status.ts
+function summarizeStories(consortDir, featureId) {
+  let pipeline;
+  try {
+    pipeline = readPipeline(consortDir, featureId);
+  } catch {
+    return [];
+  }
+  return Object.entries(pipeline.stories).map(([story_id, e]) => ({
+    story_id,
+    status: e.status,
+    gate_status: e.gate?.status ?? null,
+    accepted: e.acceptance?.decision === "accepted" || e.status === "done"
+  }));
+}
+function deriveFeaturePhase(stories) {
+  if (stories.length === 0) return null;
+  if (stories.every((s) => s.status === "done" && s.accepted)) return "complete";
+  const inBuild = (s) => s.status === "ready" || s.status === "building" || s.status === "awaiting-acceptance" || s.status === "done" || s.gate_status === "approved";
+  if (stories.some(inBuild)) return "build";
+  return "design";
+}
+function featureRequestTitle(featureDirPath, id) {
+  const p = (0, import_path15.join)(featureDirPath, "feature-request.md");
+  if (!(0, import_fs19.existsSync)(p)) return id;
+  try {
+    const h1 = (0, import_fs19.readFileSync)(p, "utf8").split("\n").find((l) => /^#\s+/.test(l));
+    return h1 ? h1.replace(/^#\s+/, "").trim() : id;
+  } catch {
+    return id;
+  }
+}
+function deliveredFeatures(consortDir) {
+  const root = featuresDir(consortDir);
+  if (!(0, import_fs19.existsSync)(root)) return [];
+  const out = [];
+  const ids = (0, import_fs19.readdirSync)(root).filter((d) => {
+    try {
+      return (0, import_fs19.statSync)((0, import_path15.join)(root, d)).isDirectory();
+    } catch {
+      return false;
+    }
+  }).sort();
+  for (const id of ids) {
+    const stories = summarizeStories(consortDir, id);
+    if (deriveFeaturePhase(stories) !== "complete") continue;
+    out.push({ id, title: featureRequestTitle((0, import_path15.join)(root, id), id) });
+  }
+  return out;
 }
 
 // consort/orchestrator/build/build-context.ts
@@ -15083,6 +15170,12 @@ function consumeHandback(action, featureId, consortDir) {
 
 ` : "";
 }
+function deliveredFeaturesDirective(consortDir) {
+  const delivered = deliveredFeatures(consortDir);
+  if (delivered.length === 0) return "";
+  const list = delivered.map((f) => `${f.id} (${f.title})`).join("; ");
+  return ` Prior sprints have ALREADY DELIVERED: ${list}. These are SHIPPED \u2014 do NOT re-propose them or their foundational scope. Treat product-overview.md as STANDING intent, not a greenfield backlog: propose only the NEXT increment that builds ON the delivered features (the product-overview's "how it grows"), and if it extends a delivered feature, say so rather than re-proposing that feature.`;
+}
 function architectConventionsDirective(consortDir) {
   const conventions = readConventions(consortDir);
   if (!conventions) {
@@ -15099,7 +15192,7 @@ function roleTaskBody(action, featureId, uiTrack, consortDir, build, omit) {
   if ("mode" in action) {
     switch (action.mode) {
       case "propose":
-        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md \u2013 author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${uiTrack ? UI_TRACK_PROPOSE : ""}`;
+        return `Propose the sprint's candidate features for planning. WRITE the proposal to ${root}/planning/feature-proposals.md \u2013 author it FRESH from ${root}/product-overview.md + ${root}/nfrs.md (do NOT assume one already exists), one candidate feature per section, so the Architect can size them and the Product Owner can commit the backlog.${deliveredFeaturesDirective(consortDir)}${uiTrack ? UI_TRACK_PROPOSE : ""}`;
       case "estimate":
         return `Estimate each proposed candidate feature with a t-shirt size (XS/S/M/L/XL) and write planning/estimates.json, so the Product Owner can commit a backlog that fits sprint capacity.`;
       case "estimate-committed":

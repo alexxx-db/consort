@@ -7155,6 +7155,30 @@ function checkE2eRouteCollision(projectDir) {
   }
   return { ok: violations.length === 0, violations };
 }
+function checkE2eSeedBackendDerivation(projectDir) {
+  const e2eRoot = join4(projectDir, E2E_DIR);
+  if (!existsSync3(e2eRoot)) return { ok: true, violations: [] };
+  const portSwap = /\.replace\(\s*(['"`]):?5173\1\s*,\s*(['"`]):?8000\2\s*\)/;
+  const violations = [];
+  for (const spec of walk(e2eRoot, (n) => /\.spec\.[tj]sx?$/.test(n))) {
+    let source;
+    try {
+      source = readFileSync3(spec, "utf8");
+    } catch {
+      continue;
+    }
+    const specRel = relative(projectDir, spec).split(/[\\/]/).join("/");
+    source.split("\n").forEach((ln, i) => {
+      if (!portSwap.test(ln)) return;
+      violations.push({
+        spec: `${specRel}:${i + 1}`,
+        snippet: ln.trim().slice(0, 160),
+        remediation: "E2E seed derives the backend by string-replacing the client port (5173->8000), which hardcodes the backend port: a shared CI runner bumps the backend off a busy 8000, so the seed POSTs to a stale server / different DB (2xx, so it does not throw) and the rows never render \u2014 GREEN locally (8000 free), RED in CI. POST through the app's OWN origin instead \u2014 `${baseURL}/api/...` \u2014 so seed + app share the resolved backend."
+      });
+    });
+  }
+  return { ok: violations.length === 0, violations };
+}
 
 // consort/gates/registered-breakdown.ts
 init_esm_shims();
@@ -7491,8 +7515,9 @@ function checkUxDesigner(args, v) {
   if (!b.ok) v.push({ artifact: "design/design-guide.json", problem: b.problem ?? "a staged brand asset is not declared as app_icon" });
 }
 function checkNavigator(args, v) {
-  const r = checkE2eRouteCollision(dirname2(args.consortDir));
-  for (const x of r.violations) v.push({ artifact: x.spec, problem: x.remediation });
+  const projectDir = dirname2(args.consortDir);
+  for (const x of checkE2eRouteCollision(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
+  for (const x of checkE2eSeedBackendDerivation(projectDir).violations) v.push({ artifact: x.spec, problem: x.remediation });
 }
 var CHECKERS = {
   "spec-author": checkSpecAuthor,

@@ -9904,6 +9904,38 @@ function designGuideConformance(consortDir) {
   return r.ok ? { ok: true } : { ok: false, problem: r.violations.join("; ") };
 }
 
+// consort/orchestrator/status/feature-status.ts
+init_cjs_shims();
+
+// consort/gates/design-spec-gate.ts
+init_cjs_shims();
+
+// consort/experiment/spike-carryforward.ts
+init_cjs_shims();
+
+// consort/orchestrator/status/feature-status.ts
+function summarizeStories(consortDir, featureId) {
+  let pipeline;
+  try {
+    pipeline = readPipeline(consortDir, featureId);
+  } catch {
+    return [];
+  }
+  return Object.entries(pipeline.stories).map(([story_id, e]) => ({
+    story_id,
+    status: e.status,
+    gate_status: e.gate?.status ?? null,
+    accepted: e.acceptance?.decision === "accepted" || e.status === "done"
+  }));
+}
+function deriveFeaturePhase(stories) {
+  if (stories.length === 0) return null;
+  if (stories.every((s) => s.status === "done" && s.accepted)) return "complete";
+  const inBuild = (s) => s.status === "ready" || s.status === "building" || s.status === "awaiting-acceptance" || s.status === "done" || s.gate_status === "approved";
+  if (stories.some(inBuild)) return "build";
+  return "design";
+}
+
 // consort/orchestrator/build/build-context.ts
 init_cjs_shims();
 var import_node_child_process6 = require("child_process");
@@ -10034,38 +10066,6 @@ function deriveSprintPlanningState(consortDir, sprint, opts = {}) {
     stories: {},
     buildActive: null
   };
-}
-
-// consort/orchestrator/status/feature-status.ts
-init_cjs_shims();
-
-// consort/gates/design-spec-gate.ts
-init_cjs_shims();
-
-// consort/experiment/spike-carryforward.ts
-init_cjs_shims();
-
-// consort/orchestrator/status/feature-status.ts
-function summarizeStories(consortDir, featureId) {
-  let pipeline;
-  try {
-    pipeline = readPipeline(consortDir, featureId);
-  } catch {
-    return [];
-  }
-  return Object.entries(pipeline.stories).map(([story_id, e]) => ({
-    story_id,
-    status: e.status,
-    gate_status: e.gate?.status ?? null,
-    accepted: e.acceptance?.decision === "accepted" || e.status === "done"
-  }));
-}
-function deriveFeaturePhase(stories) {
-  if (stories.length === 0) return null;
-  if (stories.every((s) => s.status === "done" && s.accepted)) return "complete";
-  const inBuild = (s) => s.status === "ready" || s.status === "building" || s.status === "awaiting-acceptance" || s.status === "done" || s.gate_status === "approved";
-  if (stories.some(inBuild)) return "build";
-  return "design";
 }
 
 // consort/orchestrator/status/next.ts
