@@ -88,7 +88,12 @@ function proposeEvent(): AgentLogEvent {
 }
 
 describe.skipIf(!CORPUS)("loadPlanning — the real stockflow-rerecord corpus", () => {
-  const root = join(CORPUS!, "recorded-artifacts");
+  // `describe.skipIf` skips the TESTS but still RUNS this callback body at collection time, so this
+  // join must tolerate an absent corpus (CORPUS undefined) — `CORPUS!` here threw
+  // `TypeError: path must be a string` on any checkout without the marketplace corpus (CI / a fresh
+  // clone / the pre-push gate), failing the whole suite to collect. `?? ""` keeps collection safe;
+  // the tests never run when CORPUS is unset anyway.
+  const root = join(CORPUS ?? "", "recorded-artifacts");
 
   it("joins proposals with estimates, in proposal order, with committed flags", () => {
     const p = loadPlanning([root], [proposeEvent()]);

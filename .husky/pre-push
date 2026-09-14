@@ -16,4 +16,15 @@ npm run typecheck
 echo "→ husky/pre-push: test (hermetic)"
 npm test
 
+# The vendored apps/dashboard app is a SEPARATE package (own package.json + vitest + tsconfig); the
+# root typecheck/test above never touch it, so a dashboard regression would otherwise push clean.
+# ci.yml's dashboard job is the server-side equivalent, but Actions is disabled org-wide, so this
+# hook is the only gate today. Skipped on a checkout without the app; deps are installed on first
+# run (apps/dashboard has no committed lockfile, so `npm install`, matching build:dashboard).
+if [ -d apps/dashboard ]; then
+  echo "→ husky/pre-push: dashboard (typecheck + tests)"
+  [ -d apps/dashboard/node_modules ] || ( cd apps/dashboard && npm install )
+  ( cd apps/dashboard && npx tsc --noEmit && npx vitest run )
+fi
+
 echo "✓ husky/pre-push: pass"
