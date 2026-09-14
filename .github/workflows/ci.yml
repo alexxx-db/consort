@@ -25,3 +25,27 @@ jobs:
 
       - name: Test
         run: npm test
+
+  dashboard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # apps/dashboard has no committed package-lock.json (it is installed via `npm install`, the same
+      # way build:dashboard installs it), so `npm ci` — and the setup-node npm cache, which needs a
+      # lockfile to key on — cannot be used here.
+      - name: Install dependencies
+        run: npm install
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npx vitest run
