@@ -16914,6 +16914,21 @@ then re-run.
     process.stdout.write(JSON.stringify(plan, null, 2) + "\n");
     return 0;
   }
+  if (!inReplayLane) {
+    const claimed = readWorkflowState3(cfg.projectDir)?.feature_id?.trim();
+    if (!claimed) {
+      process.stderr.write(
+        `consort-drive: refusing to drive "${cfg.featureId}" \u2013 no feature branch is claimed
+        (the SCM workflow state has no feature_id, so the working tree is still on the tier
+        parent). Driving now would write the ${bound ?? "feature"} lane's artifacts onto the parent
+        branch with no paired ${cfg.featureId} branch. Claim it first (as /sprint and /design do,
+        as an un-skippable step), then re-run:
+          lakebase-scm-claim-feature-branch ${cfg.featureId}
+`
+      );
+      return 2;
+    }
+  }
   cfg.runner = execRunner(cfg);
   const gates = effectiveGates(args, cfg.projectDir);
   snapshotRunConfig(cfg, bound ?? "full", gates);

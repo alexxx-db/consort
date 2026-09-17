@@ -35,3 +35,24 @@ describe("consort-drive wires the foreign-claim refusal (FEIP-8023)", () => {
     expect(guardRegion).toMatch(/claim|reconcile|resume/i);
   });
 });
+
+// Companion to the foreign-claim guard: driving a feature with NO claim at all
+// (consort-drive invoked directly, bypassing the command's un-skippable Step-0
+// claim) leaves the working tree on the tier parent, so the design/build lane
+// writes its artifacts onto staging with no paired branch. The driver must refuse
+// this too. Same static-source wiring check (drive.cli.ts is a self-invoking bin).
+describe("consort-drive refuses a feature drive when NO feature is claimed", () => {
+  it("guards the no-claim case (returns 2) and points at the claim, before running the driver", () => {
+    expect(DRIVE_SRC).toMatch(/no feature branch is claimed/i);
+    const region = DRIVE_SRC.slice(DRIVE_SRC.indexOf("no feature branch is claimed"), DRIVE_SRC.indexOf("no feature branch is claimed") + 700);
+    expect(region).toMatch(/lakebase-scm-claim-feature-branch/);
+    expect(region).toMatch(/return 2;/);
+  });
+
+  it("places the no-claim guard after --dry-run and gates it on replay lanes (planning/replay stay unblocked)", () => {
+    const guardIdx = DRIVE_SRC.indexOf("no feature branch is claimed");
+    expect(guardIdx).toBeGreaterThan(DRIVE_SRC.indexOf("if (args.dryRun)"));
+    // The guard's own block is gated on !inReplayLane (replay has no live branch).
+    expect(DRIVE_SRC.slice(Math.max(0, guardIdx - 300), guardIdx)).toMatch(/inReplayLane/);
+  });
+});

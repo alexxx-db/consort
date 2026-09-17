@@ -1260,6 +1260,31 @@ async function main(): Promise<number> {
     return 0;
   }
 
+  // Fail-closed: branch claiming is owned by the COMMAND, not this driver. /sprint,
+  // /design, /build, /deploy all claim the paired branch via
+  // lakebase-scm-claim-feature-branch as an un-skippable Step 0 BEFORE invoking
+  // consort-drive. Invoking consort-drive DIRECTLY with no feature claimed (e.g. to
+  // bound a phase with `--only design`) leaves the SCM workflow state with no
+  // feature_id and the working tree still on the tier parent (e.g. staging), so the
+  // design/build lane would silently write its artifacts THERE with no paired branch.
+  // The foreign-claim guard above refuses a DIFFERENT feature; this refuses the
+  // NO-claim case. Skipped in replay lanes (no live branch); never reached by
+  // --dry-run (returned above), so planning stays unblocked.
+  if (!inReplayLane) {
+    const claimed = readWorkflowState(cfg.projectDir)?.feature_id?.trim();
+    if (!claimed) {
+      process.stderr.write(
+        `consort-drive: refusing to drive "${cfg.featureId}" – no feature branch is claimed\n` +
+          `        (the SCM workflow state has no feature_id, so the working tree is still on the tier\n` +
+          `        parent). Driving now would write the ${bound ?? "feature"} lane's artifacts onto the parent\n` +
+          `        branch with no paired ${cfg.featureId} branch. Claim it first (as /sprint and /design do,\n` +
+          `        as an un-skippable step), then re-run:\n` +
+          `          lakebase-scm-claim-feature-branch ${cfg.featureId}\n`,
+      );
+      return 2;
+    }
+  }
+
   cfg.runner = execRunner(cfg);
   const gates = effectiveGates(args, cfg.projectDir);
   snapshotRunConfig(cfg, bound ?? "full", gates);
