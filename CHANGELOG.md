@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.96] - 2026-09-17
+
+### Fixed
+
+- **Repoints scm-utils `v0.2.39` -> `v0.2.40`: local-E2E free-port allocation now reaches consort-UPGRADED projects.** v0.2.39 gave new scaffolds free-port allocation in `run-tests.sh`, but consort's upgrade path (`refreshSurface` -> `enableE2eForProject`) re-appends the E2E block onto a block-less base, and that appended block had no allocation — so an upgraded UI project's E2E could still collide with a stale `:8000` / `:5173`. v0.2.40 makes the appended block self-allocate free ports (sources `port-utils.sh`, exports `E2E_BACKEND_PORT` / `E2E_CLIENT_PORT` / `VITE_PROXY_TARGET`), so a `consort-upgrade` of a UI project now carries the fix. Completes the local-E2E port work started in v0.3.95's scm-utils pin.
+
 ## [0.3.95] - 2026-09-17
 
 ### Fixed
